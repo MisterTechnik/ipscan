@@ -15,7 +15,7 @@ def osName = System.getProperty("os.name")
 def is64 = System.getProperty("os.arch").contains("64")
 def isArm = System.getProperty("os.arch").equals("aarch64")
 def platform = osName.contains("Linux") ? 'linux' + (is64 ? '64' : '32') :
-               osName.contains("Windows") ? 'win' + (is64 ? '64' : '32') :
+               osName.contains("Windows") ? 'win' + (isArm ? "Arm") + (is64 ? '64' : '32') :
                osName.contains("OS X") ? 'mac' + (isArm ? "Arm64" : "X86") : 'unknown'
 
 String exec(def line, String dir = ".", boolean failOnError = true) {
@@ -54,6 +54,7 @@ configurations {
     any
     linux64
     win64.extendsFrom(jna)
+    winArm64.extendsFrom(jna)
     macX86
     macArm64
 
@@ -68,6 +69,7 @@ dependencies {
     def swtVersion = '3.129.0'
     linux64 "org.eclipse.platform:org.eclipse.swt.gtk.linux.x86_64:${swtVersion}"
     win64 "org.eclipse.platform:org.eclipse.swt.win32.win32.x86_64:${swtVersion}"
+    winArm64 "org.eclipse.platform:org.eclipse.swt.win32.win32.aarch64:${swtVersion}"
     macX86 "org.eclipse.platform:org.eclipse.swt.cocoa.macosx.x86_64:${swtVersion}"
     macArm64 "org.eclipse.platform:org.eclipse.swt.cocoa.macosx.aarch64:${swtVersion}"
     jna 'net.java.dev.jna:jna:5.9.0'
@@ -105,31 +107,37 @@ def packageTask(String platform, Closure doMore) {
            }
         }
         exclude(
-           'images/**/*.svg',
-           'META-INF/ECLIPSE*',
-           'about_files/*',
-           'version.txt',
-           '.api_description',
-           'about.html',
-           'fragment.properties',
-           'chrome.manifest',
-           // Linux/GTK
-           'libswt-awt-gtk-*.so',
-           'libswt-glx-gtk-*.so',
-           'libswt-webkit-gtk-*.so',
-           'webkitextensions*/*',
-           // Win32
-           'swt-awt-*.dll',
-           'swt-wgl-*.dll',
-           'swt-gdip-*.dll',
-           'swt-webkit-*.dll',
-           // Mac
-           'libswt-awt-*.jnilib',
+            'images/**/*.svg',
+            'META-INF/ECLIPSE*',
+            'about_files/*',
+            'version.txt',
+            '.api_description',
+            'about.html',
+            'fragment.properties',
+            'chrome.manifest',
+            // Linux/GTK
+            'libswt-awt-gtk-*.so',
+            'libswt-glx-gtk-*.so',
+            'libswt-webkit-gtk-*.so',
+            'webkitextensions*/*',
+            // Win32
+            'swt-awt-*.dll',
+            'swt-wgl-*.dll',
+            'swt-gdip-*.dll',
+            'swt-webkit-*.dll',
+            // Mac
+            'libswt-awt-*.jnilib',
             // JNA
             'com/sun/jna/*/*.a',
             'com/sun/jna/*/*.so',
             'com/sun/jna/*/*.jnilib',
-            "com/sun/jna/win32-${platform == 'win32' ? 'x86-64' : platform == 'win64' ? 'x86' : '*'}/*.dll",
+            "com/sun/jna/win32-${
+                platform == 'win32'      ? 'x86-64' :
+                platform == 'win64'      ? 'x86'    :
+                platform == 'winArm64'     ? 'aarch64':
+                '*' 
+            }/*.dll",
+
             // Win-specific stuff
             !platform.startsWith('win') ? 'net/azib/ipscan/core/net/Win*' : '',
             !platform.startsWith('win') ? 'net/azib/ipscan/fetchers/Win*' : ''
@@ -264,6 +272,10 @@ packageTask('win64') {
     winLauncher('win64')
 }
 
+packageTask('winArm64') {
+    winLauncher('winArm64')
+}
+
 packageTask('macX86') {
     macLauncher("macX86")
 }
@@ -281,7 +293,7 @@ def jlink(String target, String jrePath, String extraOpts = System.getenv("JLINK
     }
 }
 
-task 'win-installer'(dependsOn: 'win64') {
+task 'win-installer'(dependsOn: ['win64', 'winArm64']) {
     doLast {
         def nsisVersion = "3.08"
         def nsis = "nsis-$nsisVersion"
@@ -295,7 +307,7 @@ task 'win-installer'(dependsOn: 'win64') {
         jlink(installerDir, "AppFiles/jre")
         ant.copy(file: "resources/images/icon.ico", todir: "${installerDir}/AppFiles")
         ant.copy(file: "LICENSE", tofile: "${installerDir}/AppFiles/license.txt")
-        ant.copy(file: "build/libs/${project.name}-win64-${version}.exe", tofile:"${installerDir}/AppFiles/ipscan.exe")
+        ant.copy(file: "build/libs/${project.name}-${platform}-${version}.exe", tofile:"${installerDir}/AppFiles/ipscan.exe")
         if (platform.startsWith('win')) {
             exec("cmd /c $nsis\\makensis.exe Installer\\Installer.nsi", installerDir)
         }
